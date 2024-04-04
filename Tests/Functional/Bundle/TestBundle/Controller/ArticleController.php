@@ -20,10 +20,6 @@ use FOS\RestBundle\Controller\Annotations\View;
 class ArticleController extends AbstractFOSRestController
 {
     /**
-     * Create a new resource.
-     *
-     * @return View view instance
-     *
      * @Post("/articles.{_format}", name="post_articles")
      *
      * @View()
@@ -32,26 +28,18 @@ class ArticleController extends AbstractFOSRestController
     #[View]
     public function cpostAction(Request $request)
     {
-        $view = $this->routeRedirectView('test_redirect_endpoint', ['name' => $request->request->get('name')]);
-
-        return $view;
+        return $this->routeRedirectView('test_redirect_endpoint', ['name' => $request->request->get('name')]);
     }
 
     /**
-     * Get list.
-     *
-     * @return View view instance
-     *
      * @Get("/articles.{_format}", name="get_article", defaults={"_format": "html"})
      *
      * @View()
      */
     #[Get(path: '/articles.{_format}', name: 'get_article', defaults: ['_format' => 'html'])]
     #[View]
-    public function cgetAction(Request $request)
+    public function cgetAction()
     {
-        $view = $this->view();
-
-        return $view;
+        return $this->view();
     }
 }

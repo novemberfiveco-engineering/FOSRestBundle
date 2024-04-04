@@ -60,7 +60,7 @@ class ViewResponseListenerTest extends TestCase
     {
         $kernel = $this->createMock(HttpKernelInterface::class);
 
-        return new ControllerEvent($kernel, $controller, $request, HttpKernelInterface::MASTER_REQUEST);
+        return new ControllerEvent($kernel, $controller, $request, HttpKernelInterface::MAIN_REQUEST);
     }
 
     public function testExtractsViewConfigurationFromAnnotationOnMethod()
@@ -119,7 +119,7 @@ class ViewResponseListenerTest extends TestCase
     {
         $kernel = $this->createMock(HttpKernelInterface::class);
 
-        return new ViewEvent($kernel, $request, HttpKernelInterface::MASTER_REQUEST, $result);
+        return new ViewEvent($kernel, $request, HttpKernelInterface::MAIN_REQUEST, $result);
     }
 
     public function testOnKernelViewWhenControllerResultIsNotViewObject()
