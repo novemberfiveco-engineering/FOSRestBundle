@@ -32,14 +32,26 @@ class ArticleController extends AbstractFOSRestController
     }
 
     /**
-     * @Get("/articles.{_format}", name="get_article", defaults={"_format": "html"})
+     * @Get("/articles.{_format}", name="get_articles", defaults={"_format": "html"})
      *
      * @View()
      */
-    #[Get(path: '/articles.{_format}', name: 'get_article', defaults: ['_format' => 'html'])]
+    #[Get(path: '/articles.{_format}', name: 'get_articles', defaults: ['_format' => 'html'])]
     #[View]
     public function cgetAction()
     {
         return $this->view();
+    }
+
+    /**
+     * @Get("/articles/{id}.{_format}", name="get_article", defaults={"_format": "html"})
+     *
+     * @View()
+     */
+    #[Get(path: '/articles/{id}.{_format}', name: 'get_article', defaults: ['_format' => 'html'])]
+    #[View]
+    public function cgetSingleAction(int $id)
+    {
+        return ['id' => $id];
     }
 }

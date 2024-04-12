@@ -170,7 +170,7 @@ class ViewResponseListener implements EventSubscriberInterface
     {
         return [
             KernelEvents::CONTROLLER => 'onKernelController',
-            KernelEvents::VIEW => ['onKernelView', -128],
+            KernelEvents::VIEW => ['onKernelView', 30],
         ];
     }
 
