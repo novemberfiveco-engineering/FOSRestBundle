@@ -45,11 +45,11 @@ if (class_exists(BaseAttributeRoute::class)) {
 class Route extends CompatRoute
 {
     /**
-     * @param array|string      $data
-     * @param array|string|null $path
-     * @param string[]          $requirements
-     * @param string[]|string   $methods
-     * @param string[]|string   $schemes
+     * @param array|string              $data
+     * @param array|string|null         $path
+     * @param array<string|\Stringable> $requirements
+     * @param string[]|string           $methods
+     * @param string[]|string           $schemes
      *
      * @throws \TypeError if the $data argument is an unsupported type
      */
