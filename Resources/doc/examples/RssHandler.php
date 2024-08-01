@@ -100,8 +100,8 @@ class RssHandler
             $entry->setLink($document['url']);
             $entry->addAuthor([
                 'name' => $document['author'],
-                //'email' => '',
-                //'uri'   => '',
+                // 'email' => '',
+                // 'uri'   => '',
             ]);
 
             $entry->setDateModified($document['dateUpdated']->getTimestamp());
