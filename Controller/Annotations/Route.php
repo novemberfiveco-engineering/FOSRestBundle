@@ -56,20 +56,20 @@ class Route extends CompatRoute
     public function __construct(
         $data = [],
         $path = null,
-        string $name = null,
+        ?string $name = null,
         array $requirements = [],
         array $options = [],
         array $defaults = [],
-        string $host = null,
+        ?string $host = null,
         $methods = [],
         $schemes = [],
-        string $condition = null,
-        int $priority = null,
-        string $locale = null,
-        string $format = null,
-        bool $utf8 = null,
-        bool $stateless = null,
-        string $env = null
+        ?string $condition = null,
+        ?int $priority = null,
+        ?string $locale = null,
+        ?string $format = null,
+        ?bool $utf8 = null,
+        ?bool $stateless = null,
+        ?string $env = null
     ) {
         // Use Reflection to get the constructor from the parent class two levels up (accounting for our compat definition)
         $method = (new \ReflectionClass($this))->getParentClass()->getParentClass()->getMethod('__construct');
