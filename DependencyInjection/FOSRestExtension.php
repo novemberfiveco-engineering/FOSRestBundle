@@ -393,7 +393,7 @@ class FOSRestExtension extends ConfigurableExtension
         }
     }
 
-    private function createZoneRequestMatcher(ContainerBuilder $container, ?string $path = null, ?string $host = null, array $methods = [], array $ips = null): Reference
+    private function createZoneRequestMatcher(ContainerBuilder $container, ?string $path = null, ?string $host = null, array $methods = [], ?array $ips = null): Reference
     {
         if ($methods) {
             $methods = array_map('strtoupper', (array) $methods);
