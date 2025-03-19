@@ -11,10 +11,15 @@
 
 namespace FOS\RestBundle;
 
-use Symfony\Component\DependencyInjection\ContainerBuilder;
-use Symfony\Component\HttpKernel\Bundle\Bundle;
-
 use FOS\RestBundle\DependencyInjection\Compiler\ConfigurationCheckPass;
+use FOS\RestBundle\DependencyInjection\Compiler\HandlerRegistryDecorationPass;
+use FOS\RestBundle\DependencyInjection\Compiler\JMSFormErrorHandlerPass;
+use FOS\RestBundle\DependencyInjection\Compiler\JMSHandlersPass;
+use FOS\RestBundle\DependencyInjection\Compiler\FormatListenerRulesPass;
+use FOS\RestBundle\DependencyInjection\Compiler\SerializerConfigurationPass;
+use Symfony\Component\DependencyInjection\ContainerBuilder;
+use Symfony\Component\DependencyInjection\Compiler\PassConfig;
+use Symfony\Component\HttpKernel\Bundle\Bundle;
 
 /**
  * @author Lukas Kahwe Smith <smith@pooteeweet.org>
@@ -22,11 +27,19 @@ use FOS\RestBundle\DependencyInjection\Compiler\ConfigurationCheckPass;
  */
 class FOSRestBundle extends Bundle
 {
+    const VIEW_ATTRIBUTE = '_fos_rest_view';
+    const ZONE_ATTRIBUTE = '_fos_rest_zone';
+
     /**
      * {@inheritdoc}
      */
-    public function build(ContainerBuilder $container)
+    public function build(ContainerBuilder $container): void
     {
-        $container->addCompilerPass(new ConfigurationCheckPass());
+        $container->addCompilerPass(new SerializerConfigurationPass());
+        $container->addCompilerPass(new ConfigurationCheckPass(), PassConfig::TYPE_BEFORE_OPTIMIZATION, -10);
+        $container->addCompilerPass(new FormatListenerRulesPass());
+        $container->addCompilerPass(new JMSFormErrorHandlerPass());
+        $container->addCompilerPass(new JMSHandlersPass(), PassConfig::TYPE_BEFORE_REMOVING, -10);
+        $container->addCompilerPass(new HandlerRegistryDecorationPass(), PassConfig::TYPE_AFTER_REMOVING);
     }
 }

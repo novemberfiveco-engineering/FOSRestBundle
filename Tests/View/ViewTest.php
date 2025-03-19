@@ -12,44 +12,24 @@
 namespace FOS\RestBundle\Tests\View;
 
 use FOS\RestBundle\View\View;
-use FOS\RestBundle\View\RedirectView;
-use FOS\RestBundle\View\RouteRedirectView;
-use Symfony\Bundle\FrameworkBundle\Templating\TemplateReference;
-use FOS\Rest\Util\Codes;
-use Symfony\Component\HttpFoundation\Request;
+use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * View test
+ * View test.
  *
  * @author Victor Berchet <victor@suumit.com>
  */
-class ViewTest extends \PHPUnit_Framework_TestCase
+class ViewTest extends TestCase
 {
-    /**
-     * @expectedException \InvalidArgumentException
-     */
-    public function testSetTemplateTemplateFormat()
-    {
-        $view = new View();
-
-        $view->setTemplate('foo');
-        $this->assertEquals('foo', $view->getTemplate());
-
-        $view->setTemplate($template = new TemplateReference());
-        $this->assertEquals($template, $view->getTemplate());
-
-        $view->setTemplate(array());
-    }
-
     public function testSetLocation()
     {
         $url = 'users';
         $code = 500;
 
-        $view = RedirectView::create($url, $code);
-        $this->assertAttributeEquals($url, 'location', $view);
-        $this->assertAttributeEquals(null, 'route', $view);
+        $view = View::createRedirect($url, $code);
+        $this->assertEquals($url, $view->getLocation());
+        $this->assertEquals(null, $view->getRoute());
         $this->assertEquals($code, $view->getResponse()->getStatusCode());
 
         $view = new View();
@@ -62,14 +42,14 @@ class ViewTest extends \PHPUnit_Framework_TestCase
     {
         $routeName = 'users';
 
-        $view = RouteRedirectView::create($routeName);
-        $this->assertAttributeEquals($routeName, 'route', $view);
-        $this->assertAttributeEquals(null, 'location', $view);
-        $this->assertEquals(Codes::HTTP_CREATED, $view->getResponse()->getStatusCode());
+        $view = View::createRouteRedirect($routeName, [], Response::HTTP_CREATED);
+        $this->assertEquals(null, $view->getLocation());
+        $this->assertEquals($routeName, $view->getRoute());
+        $this->assertEquals(Response::HTTP_CREATED, $view->getResponse()->getStatusCode());
 
         $view->setLocation($routeName);
-        $this->assertAttributeEquals($routeName, 'location', $view);
-        $this->assertAttributeEquals(null, 'route', $view);
+        $this->assertEquals($routeName, $view->getLocation());
+        $this->assertEquals(null, $view->getRoute());
 
         $view = new View();
         $route = 'route';
@@ -89,18 +69,10 @@ class ViewTest extends \PHPUnit_Framework_TestCase
 
     public static function setDataDataProvider()
     {
-        return array(
-            'null as data' => array(null),
-            'array as data' => array(array('foo' => 'bar')),
-        );
-    }
-
-    public function testSetEngine()
-    {
-        $view = new View();
-        $engine = 'bar';
-        $view->setEngine($engine);
-        $this->assertEquals($engine, $view->getEngine());
+        return [
+            'null as data' => [null],
+            'array as data' => [['foo' => 'bar']],
+        ];
     }
 
     public function testSetFormat()
@@ -111,21 +83,25 @@ class ViewTest extends \PHPUnit_Framework_TestCase
         $this->assertEquals($format, $view->getFormat());
     }
 
+    /**
+     * @dataProvider viewWithHeadersProvider
+     */
     public function testSetHeaders()
     {
         $view = new View();
-        $headers = array('foo' => 'bar');
-        $expected = array('foo' => array('bar'), 'cache-control' => array('no-cache'));
-        $view->setHeaders($headers);
-        $this->assertEquals($expected, $view->getHeaders());
+        $view->setHeaders(['foo' => 'bar']);
+
+        $headers = $view->getResponse()->headers;
+        $this->assertTrue($headers->has('foo'));
+        $this->assertEquals('bar', $headers->get('foo'));
     }
 
-    public function testHeadersInConstructorAreAssignedToResponseObject()
+    public function viewWithHeadersProvider()
     {
-        $headers = array('foo' => 'bar');
-        $expected = array('foo' => array('bar'), 'cache-control' => array('no-cache'));
-        $view = new View(null, null, $headers);
-        $this->assertEquals($expected, $view->getHeaders());
+        return [
+            [(new View())->setHeaders(['foo' => 'bar'])],
+            [new View(null, null, ['foo' => 'bar'])],
+        ];
     }
 
     public function testSetStatusCode()
@@ -134,5 +110,13 @@ class ViewTest extends \PHPUnit_Framework_TestCase
         $code = 404;
         $view->setStatusCode($code);
         $this->assertEquals($code, $view->getStatusCode());
+        $this->assertEquals($code, $view->getResponse()->getStatusCode());
+    }
+
+    public function testGetStatusCodeFromResponse()
+    {
+        $view = new View();
+        $this->assertNull($view->getStatusCode());
+        $this->assertEquals(Response::HTTP_OK, $view->getResponse()->getStatusCode()); // default code of the response.
     }
 }

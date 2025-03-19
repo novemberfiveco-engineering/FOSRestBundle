@@ -13,9 +13,12 @@ namespace FOS\RestBundle\Controller\Annotations;
 
 /**
  * GET Route annotation class.
+ *
  * @Annotation
+ * @NamedArgumentConstructor
  * @Target("METHOD")
  */
+#[\Attribute(\Attribute::IS_REPEATABLE | \Attribute::TARGET_METHOD)]
 class Get extends Route
 {
     public function getMethod()

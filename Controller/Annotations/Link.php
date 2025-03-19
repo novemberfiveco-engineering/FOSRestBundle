@@ -13,9 +13,12 @@ namespace FOS\RestBundle\Controller\Annotations;
 
 /**
  * LINK Route annotation class.
+ *
  * @Annotation
+ * @NamedArgumentConstructor
  * @Target("METHOD")
  */
+#[\Attribute(\Attribute::IS_REPEATABLE | \Attribute::TARGET_METHOD)]
 class Link extends Route
 {
     public function getMethod()

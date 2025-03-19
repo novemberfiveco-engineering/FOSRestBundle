@@ -11,365 +11,281 @@
 
 namespace FOS\RestBundle\Tests\Request;
 
+use FOS\RestBundle\Context\Context;
 use FOS\RestBundle\Request\RequestBodyParamConverter;
-use JMS\Serializer\Exception\RuntimeException;
-use JMS\Serializer\Exception\UnsupportedFormatException;
+use FOS\RestBundle\Serializer\Serializer;
+use FOS\RestBundle\Tests\Functional\Bundle\TestBundle\Controller\Post;
+use JMS\Serializer\Exception\InvalidArgumentException as JmsInvalidArgumentException;
+use PHPUnit\Framework\TestCase;
+use Sensio\Bundle\FrameworkExtraBundle\Configuration\ParamConverter;
+use Sensio\Bundle\FrameworkExtraBundle\Request\ParamConverter\ParamConverterInterface;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
+use Symfony\Component\HttpKernel\Exception\UnsupportedMediaTypeHttpException;
+use Symfony\Component\Serializer\Exception\InvalidArgumentException as SymfonyInvalidArgumentException;
+use Symfony\Component\Validator\ConstraintViolationListInterface;
+use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 /**
  * @author Tyler Stroud <tyler@tylerstroud.com>
  */
-class RequestBodyParamConverterTest extends \PHPUnit_Framework_TestCase
+class RequestBodyParamConverterTest extends TestCase
 {
     protected $serializer;
     protected $converter;
 
-    public function setUp()
+    public static function setUpBeforeClass(): void
     {
-        $this->serializer = $this->getMock('JMS\Serializer\SerializerInterface');
-        $this->converter = $this->getMock(
-            'FOS\RestBundle\Request\RequestBodyParamConverter',
-            array('getDeserializationContext'),
-            array($this->serializer)
-        );
+        if (!class_exists(ParamConverterInterface::class)) {
+            self::markTestSkipped('Test requires sensio/framework-extra-bundle');
+        }
     }
 
-    public function testConstructThrowsExceptionIfValidatorIsSetAndValidationArgumentIsNull()
+    protected function setUp(): void
     {
-        $this->setExpectedException('InvalidArgumentException');
-        $converter = new RequestBodyParamConverter(
-            $this->serializer,
-            null,
-            null,
-            $this->getMock('Symfony\Component\Validator\ValidatorInterface')
-        );
+        $this->serializer = $this->getMockBuilder(Serializer::class)->getMock();
+        $this->converter = new RequestBodyParamConverter($this->serializer);
+    }
+
+    public function testInterface()
+    {
+        $converter = new RequestBodyParamConverter($this->serializer);
+        $this->assertInstanceOf(ParamConverterInterface::class, $converter);
+    }
+
+    public function testContextMergeDuringExecution()
+    {
+        $options = [
+            'deserializationContext' => [
+                'groups' => ['foo', 'bar'],
+                'foobar' => 'foo',
+            ],
+        ];
+        $configuration = $this->createConfiguration('FooClass', null, $options);
+        $converter = new RequestBodyParamConverter($this->serializer, ['foogroup'], 'fooversion');
+
+        $request = $this->createRequest('body', 'application/json');
+
+        $expectedContext = new Context();
+        $expectedContext->setGroups(['foo', 'bar']);
+        $expectedContext->setVersion('fooversion');
+        $expectedContext->setAttribute('foobar', 'foo');
+
+        $this->serializer
+            ->expects($this->once())
+            ->method('deserialize')
+            ->with(
+                'body',
+                'FooClass',
+                'json',
+                $expectedContext
+            );
+
+        return $converter->apply($request, $configuration);
+    }
+
+    public function testExecutionInterceptsUnsupportedFormatException()
+    {
+        $this->expectException(UnsupportedMediaTypeHttpException::class);
+
+        $converter = new RequestBodyParamConverter($this->serializer);
+        $this->serializer
+            ->expects($this->once())
+            ->method('deserialize')
+            ->will($this->throwException(new UnsupportedMediaTypeHttpException()));
+        $this->launchExecution($converter);
+    }
+
+    public function testExecutionInterceptsJMSException()
+    {
+        $this->expectException(BadRequestHttpException::class);
+
+        $converter = new RequestBodyParamConverter($this->serializer);
+        $this->serializer
+            ->expects($this->once())
+            ->method('deserialize')
+            ->will($this->throwException(new JmsInvalidArgumentException()));
+        $this->launchExecution($converter);
+    }
+
+    public function testExecutionInterceptsSymfonySerializerException()
+    {
+        $this->expectException(BadRequestHttpException::class);
+
+        $converter = new RequestBodyParamConverter($this->serializer);
+        $this->serializer
+            ->expects($this->once())
+            ->method('deserialize')
+            ->will($this->throwException(new SymfonyInvalidArgumentException()));
+        $this->launchExecution($converter);
+    }
+
+    public function testRequestAttribute()
+    {
+        $converter = new RequestBodyParamConverter($this->serializer);
+        $this->serializer
+             ->expects($this->once())
+             ->method('deserialize')
+             ->willReturn('Object');
+        $request = $this->createRequest(null, 'application/json');
+        $this->launchExecution($converter, $request);
+        $this->assertEquals('Object', $request->attributes->get('foo'));
+    }
+
+    public function testValidatorParameters()
+    {
+        $this->serializer
+             ->expects($this->once())
+             ->method('deserialize')
+             ->willReturn('Object');
+
+        $errors = $this->getMockBuilder(ConstraintViolationListInterface::class)->getMock();
+
+        $validator = $this->getMockBuilder(ValidatorInterface::class)->getMock();
+        $validator
+            ->expects($this->once())
+            ->method('validate')
+            ->with('Object', null, ['foo'])
+            ->willReturn($errors);
+
+        $converter = new RequestBodyParamConverter($this->serializer, null, null, $validator, 'errors');
+
+        $request = $this->createRequest(null, 'application/json');
+        $configuration = $this->createConfiguration('FooClass', null, ['validator' => ['groups' => ['foo']]]);
+        $this->launchExecution($converter, $request, $configuration);
+        $this->assertEquals($errors, $request->attributes->get('errors'));
+    }
+
+    public function testValidatorSkipping()
+    {
+        $this->serializer
+            ->expects($this->once())
+            ->method('deserialize')
+            ->willReturn('Object');
+
+        $validator = $this->getMockBuilder(ValidatorInterface::class)->getMock();
+        $validator
+            ->expects($this->never())
+            ->method('validate');
+
+        $converter = new RequestBodyParamConverter($this->serializer, null, null, $validator, 'errors');
+
+        $request = $this->createRequest(null, 'application/json');
+        $configuration = $this->createConfiguration('FooClass', null, ['validate' => false]);
+        $this->launchExecution($converter, $request, $configuration);
+        $this->assertNull($request->attributes->get('errors'));
+    }
+
+    public function testReturn()
+    {
+        $converter = new RequestBodyParamConverter($this->serializer);
+        $this->assertTrue($this->launchExecution($converter));
+    }
+
+    public function testContextConfiguration()
+    {
+        $converter = new RequestBodyParamConverter($this->serializer);
+        $options = [
+            'groups' => ['foo', 'bar'],
+            'version' => 'v1.2',
+            'enableMaxDepth' => true,
+            'serializeNull' => false,
+            'foo' => 'bar',
+        ];
+
+        $contextConfigurationMethod = new \ReflectionMethod($converter, 'configureContext');
+        $contextConfigurationMethod->setAccessible(true);
+        $contextConfigurationMethod->invoke($converter, $context = new Context(), $options);
+
+        $expectedContext = new Context();
+        $expectedContext
+            ->addGroups($options['groups'])
+            ->setVersion($options['version'])
+            ->enableMaxDepth($options['enableMaxDepth'])
+            ->setSerializeNull($options['serializeNull'])
+            ->setAttribute('foo', 'bar');
+
+        $this->assertEquals($expectedContext, $context);
+    }
+
+    public function testValidatorOptionsGetter()
+    {
+        $converter = new RequestBodyParamConverter($this->serializer);
+
+        $options1 = [
+            'validator' => [
+                'groups' => ['foo'],
+                'traverse' => true,
+            ],
+        ];
+        $options2 = [
+            'validator' => [
+                'deep' => true,
+            ],
+        ];
+
+        $validatorMethod = new \ReflectionMethod($converter, 'getValidatorOptions');
+        $validatorMethod->setAccessible(true);
+        $this->assertEquals(['groups' => ['foo'], 'traverse' => true, 'deep' => false], $validatorMethod->invoke($converter, $options1));
+        $this->assertEquals(['groups' => false, 'traverse' => false, 'deep' => true], $validatorMethod->invoke($converter, $options2));
     }
 
     public function testSupports()
     {
-        $config = $this->createConfiguration('FOS\RestBundle\Tests\Request\Post', 'post');
-        $this->assertTrue($this->converter->supports($config));
+        $converter = new RequestBodyParamConverter($this->serializer);
+        $config = $this->createConfiguration(Post::class, 'post');
+        $this->assertTrue($converter->supports($config));
     }
 
     public function testSupportsWithNoClass()
     {
-        $this->assertFalse($this->converter->supports($this->createConfiguration(null, 'post')));
+        $converter = new RequestBodyParamConverter($this->serializer);
+        $this->assertFalse($converter->supports($this->createConfiguration(null, 'post')));
     }
 
-    public function testApply()
+    public function testNoContentTypeCausesUnsupportedMediaTypeException()
     {
-        $requestBody = '{"name": "Post 1", "body": "This is a blog post"}';
-        $expectedPost = new Post('Post 1', 'This is a blog post');
-
-        $this->serializer->expects($this->once())
-            ->method('deserialize')
-            ->with($requestBody, 'FOS\RestBundle\Tests\Request\Post', 'json')
-            ->will($this->returnValue($expectedPost));
-
-        $this->converter->expects($this->once())
-            ->method('getDeserializationContext')
-            ->will($this->returnValue($this->createDeserializationContext()));
-
-        $request = $this->createRequest('{"name": "Post 1", "body": "This is a blog post"}', 'application/json');
-
-        $config = $this->createConfiguration('FOS\RestBundle\Tests\Request\Post', 'post');
-        $this->converter->apply($request, $config);
-
-        $this->assertSame($expectedPost, $request->attributes->get('post'));
-    }
-
-    public function testApplyWithUnsupportedContentType()
-    {
-        $this->serializer->expects($this->once())
-            ->method('deserialize')
-            ->will($this->throwException(new UnsupportedFormatException('unsupported format')));
-
-        $this->converter->expects($this->once())
-            ->method('getDeserializationContext')
-            ->will($this->returnValue($this->createDeserializationContext()));
-
-        $request = $this->createRequest('', 'text/html');
-
-        $this->setExpectedException('Symfony\Component\HttpKernel\Exception\HttpException', 'unsupported format');
-
-        $config = $this->createConfiguration('FOS\RestBundle\Tests\Request\Post', 'post');
-        $this->converter->apply($request, $config);
-    }
-
-    public function testApplyWhenSerializerThrowsException()
-    {
-        $this->serializer->expects($this->once())
-            ->method('deserialize')
-            ->will($this->throwException(new RuntimeException('serializer exception')));
-
-        $this->converter->expects($this->once())
-            ->method('getDeserializationContext')
-            ->will($this->returnValue($this->createDeserializationContext()));
-
+        $converter = new RequestBodyParamConverter($this->serializer);
         $request = $this->createRequest();
-
-        $this->setExpectedException(
-            'Symfony\Component\HttpKernel\Exception\HttpException',
-            'serializer exception'
-        );
-
-        $config = $this->createConfiguration('FOS\RestBundle\Tests\Request\Post', 'post');
-        $this->converter->apply($request, $config);
+        $this->expectException(UnsupportedMediaTypeHttpException::class);
+        $this->launchExecution($converter, $request);
     }
 
-    public function testApplyWithSerializerContextOptionsForJMSSerializer()
+    protected function launchExecution($converter, $request = null, $configuration = null)
     {
-        $requestBody = '{"name": "Post 1", "body": "This is a blog post"}';
-        $options = array(
-            'deserializationContext' => array(
-                'groups' => array('group1'),
-                'version' => '1.0'
-            )
-        );
-
-        $context = $this->createDeserializationContext(
-            $options['deserializationContext']['groups'],
-            $options['deserializationContext']['version']
-        );
-
-        $this->converter->expects($this->once())
-            ->method('getDeserializationContext')
-            ->will($this->returnValue($context));
-
-        $this->serializer->expects($this->once())
-            ->method('deserialize')
-            ->with($requestBody, 'FOS\RestBundle\Tests\Request\Post', 'json', $context);
-
-        $request = $this->createRequest($requestBody, 'application/json');
-        $config = $this->createConfiguration('FOS\RestBundle\Tests\Request\Post', 'post', $options);
-
-        $this->converter->apply($request, $config);
-    }
-
-    public function testApplyWithDefaultSerializerContextExclusionPolicy()
-    {
-        $this->converter = $this->getMock(
-            'FOS\RestBundle\Request\RequestBodyParamConverter',
-            array('getDeserializationContext'),
-            array($this->serializer, array('group1'), '1.0')
-        );
-
-        $context = $this->createDeserializationContext(array('group1'), '1.0');
-        $request = $this->createRequest('', 'application/json');
-        $config = $this->createConfiguration('FOS\RestBundle\Tests\Request\Post', 'post');
-
-        $this->converter->expects($this->once())
-            ->method('getDeserializationContext')
-            ->will($this->returnValue($context));
-
-        $this->serializer->expects($this->once())
-            ->method('deserialize')
-            ->with('', 'FOS\RestBundle\Tests\Request\Post', 'json', $context);
-
-        $this->converter->apply($request, $config);
-    }
-
-    public function testApplyWithSerializerContextOptionsForSymfonySerializer()
-    {
-        $this->serializer = $this->getMock('Symfony\Component\Serializer\SerializerInterface', array('deserialize'));
-        $this->converter = new RequestBodyParamConverter($this->serializer);
-        $requestBody = '{"name": "Post 1", "body": "This is a blog post"}';
-
-        $options = array(
-            'deserializationContext' => array(
-                'json_decode_options' => 2, // JSON_BIGINT_AS_STRING
-            )
-        );
-
-        $this->serializer->expects($this->once())
-            ->method('deserialize')
-            ->with($requestBody, 'FOS\RestBundle\Tests\Request\Post', 'json', $options['deserializationContext']);
-
-        $request = $this->createRequest($requestBody, 'application/json');
-        $config = $this->createConfiguration('FOS\RestBundle\Tests\Request\Post', 'post', $options);
-
-        $this->converter->apply($request, $config);
-    }
-
-    public function testApplyWithValidationErrors()
-    {
-        $validator = $this->getMock('Symfony\Component\Validator\ValidatorInterface', array('validate'));
-        $validationErrors = $this->getMock('Symfony\Component\Validator\ConstraintViolationListInterface');
-
-        $this->converter = new RequestBodyParamConverter($this->serializer, null, null, $validator, 'validationErrors');
-
-        $expectedPost = new Post('Post 1', 'This is a blog post');
-        $this->serializer->expects($this->once())
-            ->method('deserialize')
-            ->with('', 'FOS\RestBundle\Tests\Request\Post', 'json')
-            ->will($this->returnValue($expectedPost));
-
-        $request = $this->createRequest('', 'application/json');
-        $options = array(
-            'validator' => array(
-                'groups' => array('group1'),
-                'traverse' => true,
-                'deep' => true
-            )
-        );
-
-        $validator->expects($this->once())
-            ->method('validate')
-            ->with($expectedPost, array('group1'), true, true)
-            ->will($this->returnValue($validationErrors));
-
-        $config = $this->createConfiguration('FOS\RestBundle\Tests\Request\Post', 'post', $options);
-        $this->converter->apply($request, $config);
-
-        $this->assertSame($expectedPost, $request->attributes->get('post'));
-        $this->assertSame($validationErrors, $request->attributes->get('validationErrors'));
-    }
-
-    public function testDefaultValidatorOptions()
-    {
-        $this->converter = new RequestBodyParamConverter($this->serializer);
-        $reflClass = new \ReflectionClass($this->converter);
-        $method = $reflClass->getMethod('getValidatorOptions');
-        $method->setAccessible(true);
-        $options = $method->invoke($this->converter, array());
-
-        $expected = array(
-            'groups' => null,
-            'traverse' => false,
-            'deep' => false
-        );
-
-        $this->assertEquals($expected, $options);
-    }
-
-    public function testDefaultValidatorOptionsMergedWithUserOptions()
-    {
-        // Annotation example
-        // @ParamConverter(
-        //   post,
-        //   class="AcmeBlogBundle:Post",
-        //   options={"validator"={"groups"={"Posting"}}
-        // )
-        $userOptions = array(
-            'validator' => array(
-                'groups' => array('Posting'),
-            )
-        );
-
-        $expectedOptions = array(
-            'groups' => array('Posting'),
-            'traverse' => false,
-            'deep' => false
-        );
-
-        $converterMock = $this->getMockBuilder('FOS\RestBundle\Request\RequestBodyParamConverter')
-            ->disableOriginalConstructor()
-            ->getMock()
-        ;
-
-        $reflClass = new \ReflectionClass($converterMock);
-        $method = $reflClass->getMethod('getValidatorOptions');
-        $method->setAccessible(true);
-        $mergedOptions = $method->invoke($converterMock, $userOptions);
-
-        $this->assertEquals($expectedOptions, $mergedOptions);
-    }
-
-    public function testValidatorOptionsStructureAfterMergeWithUserOptions()
-    {
-        // Annotation example
-        // @ParamConverter(
-        //   post,
-        //   class="AcmeBlogBundle:Post",
-        //   options={"validator"={"groups"={"Posting"}}
-        // )
-        $userOptions = array(
-            'validator' => array(
-                'groups' => array('Posting'),
-            )
-        );
-        $config = $this->createConfiguration(null, null, $userOptions);
-
-        $validatorMock = $this->getMockBuilder('Symfony\Component\Validator\ValidatorInterface')
-            ->setMethods(array('validate'))
-            ->getMock()
-        ;
-        $this->converter = new RequestBodyParamConverter($this->serializer, null, null, $validatorMock, 'validationErrors');
-        $request = $this->createRequest();
-
-        $this->converter->apply($request, $config);
-    }
-
-    protected function createConfiguration($class = null, $name = null, $options = null)
-    {
-        $config = $this->getMock(
-            'Sensio\Bundle\FrameworkExtraBundle\Configuration\ConfigurationInterface',
-            array('getClass', 'getAliasName', 'getOptions', 'getName', 'allowArray')
-        );
-
-        if ($name !== null) {
-            $config->expects($this->any())
-               ->method('getName')
-               ->will($this->returnValue($name));
+        if (null === $request) {
+            $request = $this->createRequest('body', 'application/json');
+        }
+        if (null === $configuration) {
+            $configuration = $this->createConfiguration('FooClass', 'foo');
         }
 
-        if ($class !== null) {
-            $config->expects($this->any())
-               ->method('getClass')
-               ->will($this->returnValue($class));
-        }
+        return $converter->apply($request, $configuration);
+    }
 
-        if ($options !== null) {
-            $config->expects($this->any())
-               ->method('getOptions')
-               ->will($this->returnValue($options));
-        }
-
-        return $config;
+    protected function createConfiguration($class, $name = null, array $options = [])
+    {
+        return new ParamConverter([
+            'name' => (string) $name,
+            'class' => $class,
+            'options' => $options,
+            'converter' => 'fos_rest.request_body',
+        ]);
     }
 
     protected function createRequest($body = null, $contentType = null)
     {
         $request = new Request(
-            array(),
-            array(),
-            array(),
-            array(),
-            array(),
-            array(),
+            [],
+            [],
+            [],
+            [],
+            [],
+            [],
             $body
         );
         $request->headers->set('CONTENT_TYPE', $contentType);
 
         return $request;
-    }
-
-    protected function createDeserializationContext($groups = null, $version = null)
-    {
-        $context = $this->getMock('JMS\Serializer\DeserializationContext');
-        if (null !== $groups) {
-            $context->expects($this->once())
-                ->method('setGroups')
-                ->with($groups);
-        }
-        if (null !== $version) {
-            $context->expects($this->once())
-                ->method('setVersion')
-                ->with($version);
-        }
-
-        return $context;
-    }
-}
-
-class Post
-{
-    public $name;
-    public $body;
-
-    public function __construct($name, $body)
-    {
-        $this->name = $name;
-        $this->body = $body;
     }
 }

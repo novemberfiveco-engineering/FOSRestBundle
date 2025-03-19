@@ -13,9 +13,12 @@ namespace FOS\RestBundle\Controller\Annotations;
 
 /**
  * DELETE Route annotation class.
+ *
  * @Annotation
+ * @NamedArgumentConstructor
  * @Target("METHOD")
  */
+#[\Attribute(\Attribute::IS_REPEATABLE | \Attribute::TARGET_METHOD)]
 class Delete extends Route
 {
     public function getMethod()

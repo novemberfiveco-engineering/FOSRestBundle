@@ -1,4 +1,5 @@
 <?php
+
 /*
  * This file is part of the FOSRestBundle package.
  *
@@ -10,57 +11,43 @@
 
 namespace FOS\RestBundle\Response\AllowedMethodsLoader;
 
-use Symfony\Component\Routing\RouterInterface;
 use Symfony\Component\Config\ConfigCache;
 use Symfony\Component\HttpKernel\CacheWarmer\CacheWarmerInterface;
+use Symfony\Component\Routing\RouterInterface;
 
 /**
  * AllowedMethodsRouterLoader implementation using RouterInterface to fetch
- * allowed http methods
+ * allowed http methods.
  *
  * @author Boris Guéry <guery.b@gmail.com>
  */
-class AllowedMethodsRouterLoader implements AllowedMethodsLoaderInterface, CacheWarmerInterface
+final class AllowedMethodsRouterLoader implements AllowedMethodsLoaderInterface, CacheWarmerInterface
 {
-    /**
-     * @var RouterInterface
-     */
     private $router;
-
-    /**
-     * @var ConfigCache
-     */
     private $cache;
 
-    /**
-     * Constructor
-     *
-     * @param RouterInterface $router
-     * @param string          $cacheDir
-     * @param boolean         $isDebug Kernel debug flag
-     */
-    public function __construct(RouterInterface $router, $cacheDir, $isDebug)
+    public function __construct(RouterInterface $router, string $cacheDir, bool $isDebug)
     {
         $this->router = $router;
-        $this->cache  = new ConfigCache(sprintf('%s/allowed_methods.cache.php', $cacheDir), $isDebug);
+        $this->cache = new ConfigCache(sprintf('%s/allowed_methods.cache.php', $cacheDir), $isDebug);
     }
 
     /**
      * {@inheritdoc}
      */
-    public function getAllowedMethods()
+    public function getAllowedMethods(): array
     {
         if (!$this->cache->isFresh()) {
-            $this->warmUp(null);
+            $this->warmUp(\dirname($this->cache->getPath()));
         }
 
-        return require $this->cache;
+        return require $this->cache->getPath();
     }
 
     /**
      * {@inheritdoc}
      */
-    public function isOptional()
+    public function isOptional(): bool
     {
         return true;
     }
@@ -68,34 +55,28 @@ class AllowedMethodsRouterLoader implements AllowedMethodsLoaderInterface, Cache
     /**
      * {@inheritdoc}
      */
-    public function warmUp($cacheDir)
+    public function warmUp(string $cacheDir, ?string $buildDir = null): array
     {
-        $processedRoutes = array();
+        $processedRoutes = [];
 
         $routeCollection = $this->router->getRouteCollection();
 
         foreach ($routeCollection->all() as $name => $route) {
-
-            if (!isset($processedRoutes[$route->getPattern()])) {
-                $processedRoutes[$route->getPattern()] = array(
-                    'methods' => array(),
-                    'names'   => array(),
-                );
+            if (!isset($processedRoutes[$route->getPath()])) {
+                $processedRoutes[$route->getPath()] = [
+                    'methods' => [],
+                    'names' => [],
+                ];
             }
 
-            $processedRoutes[$route->getPattern()]['names'][] = $name;
-
-            $requirements = $route->getRequirements();
-            if (isset($requirements['_method'])) {
-                $methods = explode('|', $requirements['_method']);
-                $processedRoutes[$route->getPattern()]['methods'] = array_merge(
-                    $processedRoutes[$route->getPattern()]['methods'],
-                    $methods
-                );
-            }
+            $processedRoutes[$route->getPath()]['names'][] = $name;
+            $processedRoutes[$route->getPath()]['methods'] = array_merge(
+                $processedRoutes[$route->getPath()]['methods'],
+                $route->getMethods()
+            );
         }
 
-        $allowedMethods = array();
+        $allowedMethods = [];
 
         foreach ($processedRoutes as $processedRoute) {
             if (count($processedRoute['methods']) > 0) {
@@ -109,5 +90,7 @@ class AllowedMethodsRouterLoader implements AllowedMethodsLoaderInterface, Cache
             sprintf('<?php return %s;', var_export($allowedMethods, true)),
             $routeCollection->getResources()
         );
+
+        return [];
     }
 }

@@ -13,9 +13,12 @@ namespace FOS\RestBundle\Controller\Annotations;
 
 /**
  * PATCH Route annotation class.
+ *
  * @Annotation
+ * @NamedArgumentConstructor
  * @Target("METHOD")
  */
+#[\Attribute(\Attribute::IS_REPEATABLE | \Attribute::TARGET_METHOD)]
 class Patch extends Route
 {
     public function getMethod()

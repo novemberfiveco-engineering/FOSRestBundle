@@ -1,0 +1,13 @@
+imports:
+    - { resource: ../config/default.yml }
+    - { resource: security.php }
+    - { resource: services.php }
+
+framework:
+    serializer:
+        enabled: true
+    router: { resource: "%kernel.project_dir%/CustomGuardAuthenticator/routing.yml" }
+
+fos_rest:
+    zone:
+        - { path: ^/api/* }

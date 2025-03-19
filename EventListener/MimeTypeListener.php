@@ -11,43 +11,43 @@
 
 namespace FOS\RestBundle\EventListener;
 
-use Symfony\Component\HttpKernel\Event\GetResponseEvent;
-use Symfony\Component\HttpKernel\HttpKernelInterface;
+use FOS\RestBundle\FOSRestBundle;
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpKernel\Event\RequestEvent;
 
 /**
  * This listener handles registering custom mime types.
  *
  * @author Lukas Kahwe Smith <smith@pooteeweet.org>
+ *
+ * @internal
  */
 class MimeTypeListener
 {
-    /**
-     * @var array
-     */
     private $mimeTypes;
 
     /**
-     * Constructor.
-     *
-     * @param array $mimeTypes key format, value mime type
+     * @param array $mimeTypes An array with the format as key and
+     *                         the corresponding mime type as value
      */
     public function __construct(array $mimeTypes)
     {
         $this->mimeTypes = $mimeTypes;
     }
 
-    /**
-     * Core request handler
-     *
-     * @param GetResponseEvent $event The event
-     */
-    public function onKernelRequest(GetResponseEvent $event)
+    public function onKernelRequest(RequestEvent $event): void
     {
         $request = $event->getRequest();
 
-        if (HttpKernelInterface::MASTER_REQUEST === $event->getRequestType()) {
-            foreach ($this->mimeTypes as $format => $mimeType) {
-                $request->setFormat($format, $mimeType);
+        if (!$request->attributes->get(FOSRestBundle::ZONE_ATTRIBUTE, true)) {
+            return;
+        }
+
+        if ($event->isMainRequest()) {
+            foreach ($this->mimeTypes as $format => $mimeTypes) {
+                $mimeTypes = array_merge($mimeTypes, Request::getMimeTypes($format));
+
+                $request->setFormat($format, $mimeTypes);
             }
         }
     }

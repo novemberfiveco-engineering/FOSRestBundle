@@ -11,18 +11,57 @@
 
 namespace FOS\RestBundle\Controller\Annotations;
 
+use Symfony\Component\HttpFoundation\Request;
+
 /**
  * Represents a parameter that must be present in POST data.
  *
  * @Annotation
- * @Target("METHOD")
+ * @NamedArgumentConstructor
+ * @Target({"CLASS", "METHOD"})
+ *
  * @author Jordi Boggiano <j.boggiano@seld.be>
  * @author Boris Guéry    <guery.b@gmail.com>
  */
-class RequestParam extends Param
+#[\Attribute(\Attribute::IS_REPEATABLE | \Attribute::TARGET_CLASS | \Attribute::TARGET_METHOD)]
+class RequestParam extends AbstractScalarParam
 {
-    /** @var boolean */
+    /** @var bool */
     public $strict = true;
-    /** @var string */
-    public $default = null;
+
+    /**
+     * @param mixed $requirements
+     * @param mixed $default
+     */
+    public function __construct(
+        string $name = '',
+        ?string $key = null,
+        $requirements = null,
+        $default = null,
+        string $description = '',
+        array $incompatibles = [],
+        bool $strict = true,
+        bool $map = false,
+        bool $nullable = false,
+        bool $allowBlank = true
+    ) {
+        $this->name = $name;
+        $this->key = $key;
+        $this->requirements = $requirements;
+        $this->default = $default;
+        $this->description = $description;
+        $this->incompatibles = $incompatibles;
+        $this->strict = $strict;
+        $this->map = $map;
+        $this->nullable = $nullable;
+        $this->allowBlank = $allowBlank;
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function getValue(Request $request, $default = null)
+    {
+        return $request->request->all()[$this->getKey()] ?? $default;
+    }
 }

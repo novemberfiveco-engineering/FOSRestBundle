@@ -1,0 +1,19 @@
+imports:
+    - { resource: ../config/default.yml }
+    - { resource: ./sensio_framework_extra.php }
+
+framework:
+    serializer: true
+    router:
+        resource: "%kernel.project_dir%/RequestBodyParamConverterFrameworkBundle/routing.yml"
+        strict_requirements: true
+
+fos_rest:
+    body_converter:
+        enabled: true
+
+services:
+    get_set_method_normalizer:
+        class: Symfony\Component\Serializer\Normalizer\GetSetMethodNormalizer
+        tags:
+            - { name: serializer.normalizer }

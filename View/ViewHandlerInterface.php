@@ -11,97 +11,45 @@
 
 namespace FOS\RestBundle\View;
 
-use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Response;
 
 /**
- * ViewInterface
- *
  * @author Jordi Boggiano <j.boggiano@seld.be>
  * @author Lukas K. Smith <smith@pooteeweet.org>
  */
 interface ViewHandlerInterface
 {
     /**
-     * Verifies whether the given format is supported by this view
-     *
-     * @param string $format format name
-     *
-     * @return Boolean
+     * @return bool
      */
-    public function supports($format);
+    public function supports(string $format);
 
     /**
-     * Registers a custom handler
+     * Registers a custom handler.
      *
      * The handler must have the following signature: handler($viewObject, $request, $response)
      * It can use the methods of this class to retrieve the needed data and return a
      * Response object ready to be sent.
-     *
-     * @param string   $format   the format that is handled
-     * @param callable $callable callable that can handle the given format
      */
-    public function registerHandler($format, $callable);
+    public function registerHandler(string $format, callable $callable);
 
     /**
-     * If the given format uses the templating system for rendering
-     *
-     * @param string $format
-     *
-     * @return Boolean
-     */
-    public function isFormatTemplating($format);
-
-    /**
-     * Handles a request with the proper handler
+     * Handles a request with the proper handler.
      *
      * Decides on which handler to use based on the request format
      *
-     * @param View    $view
-     * @param Request $request Request object
-     *
      * @return Response
      */
-    public function handle(View $view, Request $request = null);
+    public function handle(View $view, ?Request $request = null);
 
     /**
-     * Create the Response from the view
-     *
-     * @param View   $view
-     * @param string $location
-     * @param string $format
-     *
      * @return Response
      */
-    public function createRedirectResponse(View $view, $location, $format);
+    public function createRedirectResponse(View $view, string $location, string $format);
 
     /**
-     * Render the view data with the given template
-     *
-     * @param View   $view
-     * @param string $format
-     *
-     * @return string
-     */
-    public function renderTemplate(View $view, $format);
-
-    /**
-     * Prepare view data for use by templating engine.
-     *
-     * @param View $view
-     *
-     * @return array
-     */
-    public function prepareTemplateParameters(View $view);
-
-    /**
-     * Handles creation of a Response using either redirection or the templating/serializer service
-     *
-     * @param View    $view
-     * @param Request $request
-     * @param string  $format
-     *
      * @return Response
      */
-    public function createResponse(View $view, Request $request, $format);
+    public function createResponse(View $view, Request $request, string $format);
 }

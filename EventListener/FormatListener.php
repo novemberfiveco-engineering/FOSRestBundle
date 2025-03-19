@@ -11,93 +11,59 @@
 
 namespace FOS\RestBundle\EventListener;
 
-use Symfony\Component\HttpKernel\Event\FilterControllerEvent;
-use Symfony\Component\HttpKernel\Exception\HttpException;
-use Symfony\Component\HttpKernel\HttpKernelInterface;
-
-use FOS\Rest\Util\Codes;
-use FOS\Rest\Util\FormatNegotiatorInterface;
+use FOS\RestBundle\FOSRestBundle;
+use FOS\RestBundle\Util\StopFormatListenerException;
+use FOS\RestBundle\Negotiation\FormatNegotiator;
+use Symfony\Component\HttpKernel\Event\RequestEvent;
+use Symfony\Component\HttpKernel\Exception\NotAcceptableHttpException;
 
 /**
  * This listener handles Accept header format negotiations.
  *
  * @author Lukas Kahwe Smith <smith@pooteeweet.org>
+ *
+ * @internal
  */
 class FormatListener
 {
-    /**
-     * @var FormatNegotiatorInterface
-     */
     private $formatNegotiator;
 
-    /**
-     * @var array   Ordered array of formats (highest priority first)
-     */
-    private $defaultPriorities;
-
-    /**
-     * @var string  fallback format name
-     */
-    private $fallbackFormat;
-
-    /**
-     * @var Boolean if to consider the extension last or first
-     */
-    private $preferExtension;
-
-    /**
-     * Initialize FormatListener.
-     *
-     * @param FormatNegotiatorInterface $formatNegotiator  The content negotiator service to use
-     * @param string                    $fallbackFormat    Default fallback format
-     * @param array                     $defaultPriorities Ordered array of formats (highest priority first)
-     * @param Boolean                   $preferExtension   If to consider the extension last or first
-     */
-    public function __construct(FormatNegotiatorInterface $formatNegotiator, $fallbackFormat, array $defaultPriorities = array(), $preferExtension = false)
+    public function __construct(FormatNegotiator $formatNegotiator)
     {
         $this->formatNegotiator = $formatNegotiator;
-        $this->defaultPriorities = $defaultPriorities;
-        $this->fallbackFormat = $fallbackFormat;
-        $this->preferExtension = $preferExtension;
     }
 
-    /**
-     * Determines and sets the Request format
-     *
-     * @param GetResponseEvent $event The event
-     */
-    public function onKernelController(FilterControllerEvent $event)
+    public function onKernelRequest(RequestEvent $event): void
     {
         $request = $event->getRequest();
 
-/*
-        // TODO get priorities from the controller action
-        $action = $request->attributes->get('_controller');
-        $controller = $event->getController();
-        $priorities =
-*/
-
-        if (empty($priorities)) {
-            $priorities = $this->defaultPriorities;
-        }
-
-        $format = null;
-        if (!empty($priorities)) {
-            $format = $this->formatNegotiator->getBestFormat($request, $priorities, $this->preferExtension);
-        }
-
-        if (null === $format) {
-            $format = $this->fallbackFormat;
-        }
-
-        if (null === $format) {
-            if ($event->getRequestType() === HttpKernelInterface::MASTER_REQUEST) {
-                throw new HttpException(Codes::HTTP_NOT_ACCEPTABLE, "No matching accepted Response format could be determined");
-            }
-
+        if (!$request->attributes->get(FOSRestBundle::ZONE_ATTRIBUTE, true)) {
             return;
         }
 
-        $request->setRequestFormat($format);
+        try {
+            $format = $request->getRequestFormat(null);
+            if (null === $format) {
+                $accept = $this->formatNegotiator->getBest('');
+                if (null !== $accept && 0.0 < $accept->getQuality()) {
+                    $format = $request->getFormat($accept->getValue());
+                    if (null !== $format) {
+                        $request->attributes->set('media_type', $accept->getValue());
+                    }
+                }
+            }
+
+            if (null === $format) {
+                if ($event->isMainRequest()) {
+                    throw new NotAcceptableHttpException('No matching accepted Response format could be determined');
+                }
+
+                return;
+            }
+
+            $request->setRequestFormat($format);
+        } catch (StopFormatListenerException $e) {
+            // nothing to do
+        }
     }
 }

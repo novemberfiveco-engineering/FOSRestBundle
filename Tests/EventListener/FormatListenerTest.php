@@ -11,21 +11,30 @@
 
 namespace FOS\RestBundle\Tests\EventListener;
 
-use Symfony\Component\HttpKernel\HttpKernelInterface;
-use Symfony\Component\HttpFoundation\Request;
-
 use FOS\RestBundle\EventListener\FormatListener;
+use FOS\RestBundle\FOSRestBundle;
+use FOS\RestBundle\Negotiation\FormatNegotiator;
+use PHPUnit\Framework\TestCase;
+use Symfony\Component\HttpFoundation\ChainRequestMatcher;
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\RequestMatcher;
+use Symfony\Component\HttpFoundation\RequestMatcherInterface;
+use Symfony\Component\HttpFoundation\RequestStack;
+use Symfony\Component\HttpKernel\Event\RequestEvent;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 
 /**
- * Request listener test
+ * Request listener test.
  *
  * @author Lukas Kahwe Smith <smith@pooteeweet.org>
  */
-class FormatListenerTest extends \PHPUnit_Framework_TestCase
+class FormatListenerTest extends TestCase
 {
     public function testOnKernelControllerNegotiation()
     {
-        $event = $this->getMockBuilder('\Symfony\Component\HttpKernel\Event\FilterControllerEvent')->disableOriginalConstructor()->getMock();
+        $event = $this->getMockBuilder(RequestEvent::class)
+            ->disableOriginalConstructor()
+            ->getMock();
 
         $request = new Request();
 
@@ -33,40 +42,80 @@ class FormatListenerTest extends \PHPUnit_Framework_TestCase
             ->method('getRequest')
             ->will($this->returnValue($request));
 
-        $formatNegotiator = $this->getMockBuilder('FOS\Rest\Util\FormatNegotiator')->disableOriginalConstructor()->getMock();
+        $requestStack = new RequestStack();
+        $requestStack->push($request);
+        $formatNegotiator = new FormatNegotiator($requestStack);
+        $formatNegotiator->add($this->getRequestMatcher('/'), [
+            'fallback_format' => 'xml',
+        ]);
 
-        $listener = new FormatListener($formatNegotiator, 'xml', array());
+        $listener = new FormatListener($formatNegotiator);
 
-        $listener->onKernelController($event);
+        $listener->onKernelRequest($event);
+
+        $this->assertEquals('xml', $request->getRequestFormat());
+    }
+
+    public function testOnKernelControllerNoZone()
+    {
+        $event = $this->getMockBuilder(RequestEvent::class)
+            ->disableOriginalConstructor()
+            ->getMock();
+
+        $request = new Request();
+        $request->attributes->set(FOSRestBundle::ZONE_ATTRIBUTE, false);
+
+        $requestStack = new RequestStack();
+        $requestStack->push($request);
+
+        $event->expects($this->once())
+            ->method('getRequest')
+            ->will($this->returnValue($request));
+
+        $formatNegotiator = new FormatNegotiator($requestStack);
+        $formatNegotiator->add($this->getRequestMatcher('/'), ['fallback_format' => 'json']);
+
+        $listener = new FormatListener($formatNegotiator);
+
+        $listener->onKernelRequest($event);
+
+        $this->assertEquals($request->getRequestFormat(), 'html');
+    }
+
+    public function testOnKernelControllerNegotiationStopped()
+    {
+        $event = $this->getMockBuilder(RequestEvent::class)
+            ->disableOriginalConstructor()
+            ->getMock();
+
+        $request = new Request();
+        $request->setRequestFormat('xml');
+
+        $requestStack = new RequestStack();
+        $requestStack->push($request);
+
+        $event->expects($this->once())
+            ->method('getRequest')
+            ->will($this->returnValue($request));
+
+        $formatNegotiator = new FormatNegotiator($requestStack);
+        $formatNegotiator->add($this->getRequestMatcher('/'), ['stop' => true]);
+        $formatNegotiator->add($this->getRequestMatcher('/'), ['fallback_format' => 'json']);
+
+        $listener = new FormatListener($formatNegotiator);
+
+        $listener->onKernelRequest($event);
 
         $this->assertEquals($request->getRequestFormat(), 'xml');
     }
 
-    public function testOnKernelControllerDefault()
+    public function testOnKernelControllerException()
     {
-        $event = $this->getMockBuilder('\Symfony\Component\HttpKernel\Event\FilterControllerEvent')->disableOriginalConstructor()->getMock();
+        $this->expectException(HttpException::class);
 
-        $request = new Request();
-
-        $event->expects($this->once())
-            ->method('getRequest')
-            ->will($this->returnValue($request));
-
-        $formatNegotiator = $this->getMockBuilder('FOS\Rest\Util\FormatNegotiator')->disableOriginalConstructor()->getMock();
-        $formatNegotiator->expects($this->once())
-            ->method('getBestFormat')
-            ->will($this->returnValue('xml'));
-
-        $listener = new FormatListener($formatNegotiator, null, array('json'));
-
-        $listener->onKernelController($event);
-
-        $this->assertEquals($request->getRequestFormat(), 'xml');
-    }
-
-    public function testOnKernelControllerNoFormat()
-    {
-        $event = $this->getMockBuilder('\Symfony\Component\HttpKernel\Event\FilterControllerEvent')->disableOriginalConstructor()->getMock();
+        $event = $this->getMockBuilder(RequestEvent::class)
+            ->disableOriginalConstructor()
+            ->getMock();
 
         $request = new Request();
 
@@ -75,39 +124,102 @@ class FormatListenerTest extends \PHPUnit_Framework_TestCase
             ->will($this->returnValue($request));
 
         $event->expects($this->once())
-            ->method('getRequestType')
-            ->will($this->returnValue(HttpKernelInterface::SUB_REQUEST));
+            ->method('isMainRequest')
+            ->will($this->returnValue(true));
 
-        $formatNegotiator = $this->getMockBuilder('FOS\Rest\Util\FormatNegotiator')->disableOriginalConstructor()->getMock();
+        $requestStack = new RequestStack();
+        $requestStack->push($request);
 
-        $listener = new FormatListener($formatNegotiator, null, array());
+        $listener = new FormatListener(new FormatNegotiator($requestStack));
 
-        $listener->onKernelController($event);
-
-        $this->assertEquals('html', $request->getRequestFormat());
+        $listener->onKernelRequest($event);
     }
 
     /**
-     * @expectedException \Symfony\Component\HttpKernel\Exception\HttpException
+     * Test FormatListener won't overwrite request format when it was already specified.
+     *
+     * @dataProvider useSpecifiedFormatDataProvider
      */
-    public function testOnKernelControllerException()
+    public function testUseSpecifiedFormat($format, $result)
     {
-        $event = $this->getMockBuilder('\Symfony\Component\HttpKernel\Event\FilterControllerEvent')->disableOriginalConstructor()->getMock();
+        $event = $this->getMockBuilder(RequestEvent::class)
+            ->disableOriginalConstructor()
+            ->getMock();
 
         $request = new Request();
+        if ($format) {
+            $request->setRequestFormat($format);
+        }
 
         $event->expects($this->once())
             ->method('getRequest')
             ->will($this->returnValue($request));
 
+        $requestStack = new RequestStack();
+        $requestStack->push($request);
+        $formatNegotiator = new FormatNegotiator($requestStack);
+        $formatNegotiator->add($this->getRequestMatcher('/'), [
+            'fallback_format' => 'xml',
+        ]);
+
+        $listener = new FormatListener($formatNegotiator);
+
+        $listener->onKernelRequest($event);
+
+        $this->assertEquals($request->getRequestFormat(), $result);
+    }
+
+    public function useSpecifiedFormatDataProvider()
+    {
+        return [
+            [null, 'xml'],
+            ['json', 'json'],
+        ];
+    }
+
+    /**
+     * Generates a request like a symfony fragment listener does.
+     * Set request type to master.
+     */
+    public function testSfFragmentFormat()
+    {
+        $event = $this->getMockBuilder(RequestEvent::class)
+            ->disableOriginalConstructor()
+            ->getMock();
+
+        $request = new Request();
+        $attributes = ['_locale' => 'en', '_format' => 'json', '_controller' => 'FooBundle:Index:featured'];
+        $request->attributes->add($attributes);
+        $request->attributes->set('_route_params', array_replace($request->attributes->get('_route_params', []), $attributes));
+
         $event->expects($this->once())
-            ->method('getRequestType')
-            ->will($this->returnValue(HttpKernelInterface::MASTER_REQUEST));
+            ->method('getRequest')
+            ->will($this->returnValue($request));
 
-        $formatNegotiator = $this->getMockBuilder('FOS\Rest\Util\FormatNegotiator')->disableOriginalConstructor()->getMock();
+        $event->expects($this->any())
+            ->method('isMainRequest')
+            ->will($this->returnValue(true));
 
-        $listener = new FormatListener($formatNegotiator, null, array());
+        $requestStack = new RequestStack();
+        $requestStack->push($request);
+        $formatNegotiator = new FormatNegotiator($requestStack);
+        $formatNegotiator->add($this->getRequestMatcher('/'), [
+            'fallback_format' => 'json',
+        ]);
 
-        $listener->onKernelController($event);
+        $listener = new FormatListener($formatNegotiator);
+
+        $listener->onKernelRequest($event);
+
+        $this->assertEquals($request->getRequestFormat(), 'json');
+    }
+
+    private function getRequestMatcher(string $path): RequestMatcherInterface
+    {
+        if (class_exists(ChainRequestMatcher::class)) {
+            return new ChainRequestMatcher([new RequestMatcher\PathRequestMatcher($path)]);
+        }
+
+        return new RequestMatcher($path);
     }
 }

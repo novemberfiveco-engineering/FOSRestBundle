@@ -11,8 +11,6 @@
 
 namespace FOS\RestBundle\Request;
 
-use Symfony\Component\HttpFoundation\Request;
-
 /**
  * Helper interface to validate query parameters from the active request.
  *
@@ -21,29 +19,19 @@ use Symfony\Component\HttpFoundation\Request;
  */
 interface ParamFetcherInterface
 {
-    /**
-     * @param callable $controller
-     *
-     * @return void
-     */
-    public function setController($controller);
+    public function setController(callable $controller);
 
     /**
-     * Get a validated parameter.
+     * @param bool|null $strict Whether a requirement mismatch should cause an exception
      *
-     * @param string  $name   Name of the parameter
-     * @param Boolean $strict Whether a requirement mismatch should cause an exception
-     *
-     * @return mixed Value of the parameter.
+     * @return mixed Value of the parameter
      */
-    public function get($name, $strict = null);
+    public function get(string $name, ?bool $strict = null);
 
     /**
-     * Get all validated parameter.
+     * @param bool $strict Whether a requirement mismatch should cause an exception
      *
-     * @param Boolean $strict Whether a requirement mismatch should cause an exception
-     *
-     * @return array Values of all the parameters.
+     * @return array
      */
-    public function all($strict = false);
+    public function all(bool $strict = false);
 }

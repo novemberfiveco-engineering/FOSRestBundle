@@ -11,53 +11,25 @@
 
 namespace FOS\RestBundle\Tests\DependencyInjection\Compiler;
 
+use FOS\RestBundle\DependencyInjection\Compiler\ConfigurationCheckPass;
+use PHPUnit\Framework\TestCase;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 
-use FOS\RestBundle\DependencyInjection\Compiler\ConfigurationCheckPass;
-
 /**
- * ConfigurationCheckPass test
+ * ConfigurationCheckPass test.
  *
  * @author Eriksen Costa <eriksencosta@gmail.com>
  */
-class ConfigurationCheckPassTest extends \PHPUnit_Framework_TestCase
+class ConfigurationCheckPassTest extends TestCase
 {
-    /**
-     * @expectedException \RuntimeException
-     */
-    public function testShouldThrowRuntimeExceptionWhenFOSRestBundleAnnotations()
-    {
-        $container = $this->getMock('\Symfony\Component\DependencyInjection\ContainerBuilder');
-        $container->expects($this->at(0))
-            ->method('has')
-            ->with($this->equalTo('sensio_framework_extra.view.listener'))
-            ->will($this->returnValue(true));
-
-        $container->expects($this->at(1))
-            ->method('has')
-            ->with($this->equalTo('fos_rest.view_response_listener'))
-            ->will($this->returnValue(true));
-
-        $compiler = new ConfigurationCheckPass();
-        $compiler->process($container);
-    }
-
     public function testShouldThrowRuntimeExceptionWhenBodyConverterIsEnabledButParamConvertersAreNotEnabled()
     {
-        $this->setExpectedException(
-            'RuntimeException',
-            'You need to enable the parameter converter listeners in SensioFrameworkExtraBundle when using the FOSRestBundle RequestBodyParamConverter'
-        );
-        $container = $this->getMock('\Symfony\Component\DependencyInjection\ContainerBuilder');
-        $container->expects($this->at(1))
-            ->method('has')
-            ->with($this->equalTo('fos_rest.converter.request_body'))
-            ->will($this->returnValue(true));
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('You need to enable the parameter converter listeners in SensioFrameworkExtraBundle when using the FOSRestBundle RequestBodyParamConverter');
 
-        $container->expects($this->at(2))
-            ->method('has')
-            ->with($this->equalTo('sensio_framework_extra.converter.listener'))
-            ->will($this->returnValue(false));
+        $container = new ContainerBuilder();
+
+        $container->register('fos_rest.converter.request_body');
 
         $compiler = new ConfigurationCheckPass();
         $compiler->process($container);

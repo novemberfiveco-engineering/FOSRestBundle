@@ -13,9 +13,12 @@ namespace FOS\RestBundle\Controller\Annotations;
 
 /**
  * HEAD Route annotation class.
+ *
  * @Annotation
+ * @NamedArgumentConstructor
  * @Target("METHOD")
  */
+#[\Attribute(\Attribute::IS_REPEATABLE | \Attribute::TARGET_METHOD)]
 class Head extends Route
 {
     public function getMethod()

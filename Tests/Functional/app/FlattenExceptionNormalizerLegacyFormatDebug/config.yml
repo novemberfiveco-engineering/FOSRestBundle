@@ -1,0 +1,13 @@
+imports:
+    - { resource: ../config/default.yml }
+    - { resource: ../config/exception_listener.yml }
+
+framework:
+    serializer:
+        enabled: true
+
+fos_rest:
+    exception:
+        debug: true
+        flatten_exception_format: 'legacy'
+        serializer_error_renderer: true

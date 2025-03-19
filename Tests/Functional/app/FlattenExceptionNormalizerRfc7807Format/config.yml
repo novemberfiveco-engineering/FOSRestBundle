@@ -1,0 +1,14 @@
+imports:
+    - { resource: ../config/default.yml }
+    - { resource: ../config/exception_listener.yml }
+
+framework:
+    serializer:
+        enabled: true
+
+fos_rest:
+    exception:
+        codes:
+            'InvalidArgumentException': 400
+        flatten_exception_format: 'rfc7807'
+        serializer_error_renderer: true

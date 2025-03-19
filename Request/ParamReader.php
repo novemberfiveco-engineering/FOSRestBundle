@@ -12,53 +12,108 @@
 namespace FOS\RestBundle\Request;
 
 use Doctrine\Common\Annotations\Reader;
-use FOS\RestBundle\Controller\Annotations\Param;
+use FOS\RestBundle\Controller\Annotations\ParamInterface;
 
 /**
- * Class loading "@QueryParam" and "@RequestParam" annotations from methods.
+ * Class loading "@ParamInterface" annotations from methods.
  *
  * @author Alexander <iam.asm89@gmail.com>
  * @author Lukas Kahwe Smith <smith@pooteeweet.org>
  * @author Boris Guéry  <guery.b@gmail.com>
  */
-class ParamReader implements ParamReaderInterface
+final class ParamReader implements ParamReaderInterface
 {
+    /**
+     * @var Reader|null
+     */
     private $annotationReader;
 
-    /**
-     * Initializes controller reader.
-     *
-     * @param Reader $annotationReader annotation reader
-     */
-    public function __construct(Reader $annotationReader)
+    public function __construct(?Reader $annotationReader = null)
     {
         $this->annotationReader = $annotationReader;
     }
 
     /**
-     * {@inheritDoc}
+     * {@inheritdoc}
      */
-    public function read(\ReflectionClass $reflection, $method)
+    public function read(\ReflectionClass $reflection, string $method): array
     {
         if (!$reflection->hasMethod($method)) {
-            throw new \InvalidArgumentException(sprintf("Class '%s' has no method '%s' method.", $reflection->getName(), $method));
+            throw new \InvalidArgumentException(sprintf('Class "%s" has no method "%s".', $reflection->getName(), $method));
         }
 
-        return $this->getParamsFromMethod($reflection->getMethod($method));
+        $methodParams = $this->getParamsFromMethod($reflection->getMethod($method));
+        $classParams = $this->getParamsFromClass($reflection);
+
+        return array_merge($methodParams, $classParams);
     }
 
     /**
-     * {@inheritDoc}
+     * {@inheritdoc}
      */
-    public function getParamsFromMethod(\ReflectionMethod $method)
+    public function getParamsFromMethod(\ReflectionMethod $method): array
     {
-        $annotations = $this->annotationReader->getMethodAnnotations($method);
+        $annotations = [];
+        if (\PHP_VERSION_ID >= 80000) {
+            $annotations = $this->getParamsFromAttributes($method);
+        }
 
-        $params = array();
+        if (null !== $this->annotationReader) {
+            $annotations = array_merge(
+                $annotations,
+                $this->annotationReader->getMethodAnnotations($method) ?? []
+            );
+        }
+
+        return $this->getParamsFromAnnotationArray($annotations);
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function getParamsFromClass(\ReflectionClass $class): array
+    {
+        $annotations = [];
+        if (\PHP_VERSION_ID >= 80000) {
+            $annotations = $this->getParamsFromAttributes($class);
+        }
+
+        if (null !== $this->annotationReader) {
+            $annotations = array_merge(
+                $annotations,
+                $this->annotationReader->getClassAnnotations($class) ?? []
+            );
+        }
+
+        return $this->getParamsFromAnnotationArray($annotations);
+    }
+
+    /**
+     * @return ParamInterface[]
+     */
+    private function getParamsFromAnnotationArray(array $annotations): array
+    {
+        $params = [];
         foreach ($annotations as $annotation) {
-            if ($annotation instanceof Param) {
-                $params[$annotation->name] = $annotation;
+            if ($annotation instanceof ParamInterface) {
+                $params[$annotation->getName()] = $annotation;
             }
+        }
+
+        return $params;
+    }
+
+    /**
+     * @param \ReflectionClass|\ReflectionMethod $reflection
+     *
+     * @return ParamInterface[]
+     */
+    private function getParamsFromAttributes($reflection): array
+    {
+        $params = [];
+        foreach ($reflection->getAttributes(ParamInterface::class, \ReflectionAttribute::IS_INSTANCEOF) as $attribute) {
+            $param = $attribute->newInstance();
+            $params[$param->getName()] = $param;
         }
 
         return $params;

@@ -11,10 +11,8 @@
 
 namespace FOS\RestBundle\View;
 
-use Symfony\Bundle\FrameworkBundle\Templating\TemplateReference;
+use FOS\RestBundle\Context\Context;
 use Symfony\Component\HttpFoundation\Response;
-
-use JMS\Serializer\SerializationContext;
 
 /**
  * Default View implementation.
@@ -22,211 +20,98 @@ use JMS\Serializer\SerializationContext;
  * @author Johannes M. Schmitt <schmittjoh@gmail.com>
  * @author Lukas K. Smith <smith@pooteeweet.org>
  */
-class View
+final class View
 {
-    /**
-     * @var mixed
-     */
     private $data;
-
-    /**
-     * @var string|TemplateReference
-     */
-    private $template;
-
-    /**
-     * @var string
-     */
-    private $templateVar;
-
-    /**
-     * @var string
-     */
-    private $engine;
-
-    /**
-     * @var string
-     */
+    private $statusCode;
     private $format;
-
-    /**
-     * @var string
-     */
     private $location;
-
-    /**
-     * @var string
-     */
     private $route;
-
-    /**
-     * @var SerializationContext
-     */
-    private $serializationContext;
-
-    /**
-     * @var Response
-     */
+    private $routeParameters;
+    private $context;
     private $response;
 
-    /**
-     * Convenience method to allow for a fluent interface.
-     *
-     * @param mixed   $data
-     * @param integer $statusCode
-     * @param array   $headers
-     * @return \FOS\RestBundle\View\View
-     */
-    public static function create($data = null, $statusCode = null, array $headers = array())
+    public static function create($data = null, ?int $statusCode = null, array $headers = []): self
     {
         return new static($data, $statusCode, $headers);
     }
 
-    /**
-     * Constructor
-     *
-     * @param mixed   $data
-     * @param integer $statusCode
-     * @param array   $headers
-     */
-    public function __construct($data = null, $statusCode = null, array $headers = array())
+    public static function createRedirect(string $url, int $statusCode = Response::HTTP_FOUND, array $headers = []): self
+    {
+        $view = static::create(null, $statusCode, $headers);
+        $view->setLocation($url);
+
+        return $view;
+    }
+
+    public static function createRouteRedirect(
+        string $route,
+        array $parameters = [],
+        int $statusCode = Response::HTTP_FOUND,
+        array $headers = []
+    ): self {
+        $view = static::create(null, $statusCode, $headers);
+        $view->setRoute($route);
+        $view->setRouteParameters($parameters);
+
+        return $view;
+    }
+
+    public function __construct($data = null, ?int $statusCode = null, array $headers = [])
     {
         $this->setData($data);
-        $this->setStatusCode($statusCode ?: 200);
-        $this->setTemplateVar('data');
+        $this->setStatusCode($statusCode);
+
         if (!empty($headers)) {
             $this->getResponse()->headers->replace($headers);
         }
     }
 
-    /**
-     * set the data
-     *
-     * @param mixed $data
-     *
-     * @return View
-     */
-    public function setData($data)
+    public function setData($data): self
     {
         $this->data = $data;
 
         return $this;
     }
 
-    /**
-     * set a header
-     *
-     * @param  string $name
-     * @param  string $value
-     * @return View
-     */
-    public function setHeader($name, $value)
+    public function setHeader(string $name, string $value): self
     {
         $this->getResponse()->headers->set($name, $value);
 
         return $this;
     }
 
-    /**
-     * set the headers
-     *
-     * @param  array $headers
-     * @return View
-     */
-    public function setHeaders(array $headers)
+    public function setHeaders(array $headers): self
     {
         $this->getResponse()->headers->replace($headers);
 
         return $this;
     }
 
-    /**
-     * set the HTTP status code
-     *
-     * @param  int  $code
-     * @return View
-     */
-    public function setStatusCode($code)
+    public function setStatusCode(?int $code): self
     {
-        $this->getResponse()->setStatusCode($code);
-
-        return $this;
-    }
-
-    /**
-     * set the serialization context
-     * @param  SerializationContext $serializationContext
-     * @return View
-     */
-    public function setSerializationContext(SerializationContext $serializationContext)
-    {
-        $this->serializationContext = $serializationContext;
-
-        return $this;
-    }
-
-    /**
-     * Sets template to use for the encoding
-     *
-     * @param string|TemplateReference $template template to be used in the encoding
-     *
-     * @throws \InvalidArgumentException if the template is neither a string nor an instance of TemplateReference
-     */
-    public function setTemplate($template)
-    {
-        if (!(is_string($template) || $template instanceof TemplateReference)) {
-            throw new \InvalidArgumentException('The template should be a string or extend TemplateReference');
+        if (null !== $code) {
+            $this->statusCode = $code;
         }
-        $this->template = $template;
 
         return $this;
     }
 
-    /**
-     * Sets template variable name to be used in templating formats
-     *
-     * @param string
-     */
-    public function setTemplateVar($templateVar)
+    public function setContext(Context $context): self
     {
-        $this->templateVar = $templateVar;
+        $this->context = $context;
 
         return $this;
     }
 
-    /**
-     * set the engine
-     *
-     * @param $engine
-     * @return View
-     */
-    public function setEngine($engine)
-    {
-        $this->engine = $engine;
-
-        return $this;
-    }
-
-    /**
-     * set the format
-     *
-     * @param $format
-     * @return View
-     */
-    public function setFormat($format)
+    public function setFormat(string $format): self
     {
         $this->format = $format;
 
         return $this;
     }
 
-    /**
-     * set the location (implicitly removes the route)
-     *
-     * @param $location
-     * @return View
-     */
-    public function setLocation($location)
+    public function setLocation(string $location): self
     {
         $this->location = $location;
         $this->route = null;
@@ -235,12 +120,9 @@ class View
     }
 
     /**
-     * set the route (implicitly removes the location)
-     *
-     * @param $route
-     * @return View
+     * Sets the route (implicitly removes the location).
      */
-    public function setRoute($route)
+    public function setRoute(string $route): self
     {
         $this->route = $route;
         $this->location = null;
@@ -248,134 +130,74 @@ class View
         return $this;
     }
 
-    /**
-     * set the response
-     *
-     * @param  Response $response
-     * @return View
-     */
-    public function setResponse(Response $response)
+    public function setRouteParameters(array $parameters): self
+    {
+        $this->routeParameters = $parameters;
+
+        return $this;
+    }
+
+    public function setResponse(Response $response): self
     {
         $this->response = $response;
 
         return $this;
     }
 
-    /**
-     * get the data
-     *
-     * @return mixed|null data
-     */
     public function getData()
     {
         return $this->data;
     }
 
-    /**
-     * get the HTTP status code
-     *
-     * @return int|null HTTP status code
-     */
-    public function getStatusCode()
+    public function getStatusCode(): ?int
     {
-        return $this->getResponse()->getStatusCode();
+        return $this->statusCode;
     }
 
-    /**
-     * get the headers
-     *
-     * @return array|null headers
-     */
-    public function getHeaders()
+    public function getHeaders(): array
     {
         return $this->getResponse()->headers->all();
     }
 
-    /**
-     * get the template
-     *
-     * @return TemplateReference|string|null template
-     */
-    public function getTemplate()
-    {
-        return $this->template;
-    }
-
-    /**
-     * Get the template variable name.
-     *
-     * @param string|null
-     */
-    public function getTemplateVar()
-    {
-        return $this->templateVar;
-    }
-
-    /**
-     * get the engine
-     *
-     * @return string|null engine
-     */
-    public function getEngine()
-    {
-        return $this->engine;
-    }
-
-    /**
-     * get the format
-     *
-     * @return string|null format
-     */
-    public function getFormat()
+    public function getFormat(): ?string
     {
         return $this->format;
     }
 
-    /**
-     * get the location
-     *
-     * @return string|null url
-     */
-    public function getLocation()
+    public function getLocation(): ?string
     {
         return $this->location;
     }
 
-    /**
-     * get the route
-     *
-     * @return string|null route
-     */
-    public function getRoute()
+    public function getRoute(): ?string
     {
         return $this->route;
     }
 
-    /**
-     * get the response
-     *
-     * @return Response response
-     */
-    public function getResponse()
+    public function getRouteParameters(): ?array
+    {
+        return $this->routeParameters;
+    }
+
+    public function getResponse(): Response
     {
         if (null === $this->response) {
             $this->response = new Response();
+
+            if (null !== ($code = $this->getStatusCode())) {
+                $this->response->setStatusCode($code);
+            }
         }
 
         return $this->response;
     }
 
-    /**
-     * get the serialization context
-     *
-     * @return SerializationContext serialization context
-     */
-    public function getSerializationContext()
+    public function getContext(): Context
     {
-        if (null === $this->serializationContext) {
-            $this->serializationContext = new SerializationContext();
+        if (null === $this->context) {
+            $this->context = new Context();
         }
 
-        return $this->serializationContext;
+        return $this->context;
     }
 }

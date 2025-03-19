@@ -11,89 +11,151 @@
 
 namespace FOS\RestBundle\EventListener;
 
-use Symfony\Component\HttpKernel\Event\FilterControllerEvent;
-use Symfony\Component\HttpKernel\Event\GetResponseForControllerResultEvent;
-use Symfony\Component\DependencyInjection\ContainerInterface;
-use Symfony\Bundle\FrameworkBundle\Templating\TemplateReference;
-
-use Sensio\Bundle\FrameworkExtraBundle\EventListener\TemplateListener;
-
-use JMS\Serializer\SerializationContext;
-
+use Doctrine\Common\Annotations\Reader;
+use Doctrine\Persistence\Proxy;
+use FOS\RestBundle\Controller\Annotations\View as ViewAnnotation;
+use FOS\RestBundle\FOSRestBundle;
 use FOS\RestBundle\View\View;
-
-use FOS\Rest\Util\Codes;
+use FOS\RestBundle\View\ViewHandlerInterface;
+use Symfony\Component\EventDispatcher\EventSubscriberInterface;
+use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpKernel\Event\ControllerEvent;
+use Symfony\Component\HttpKernel\Event\ViewEvent;
+use Symfony\Component\HttpKernel\KernelEvents;
 
 /**
- * The ViewResponseListener class handles the View core event as well as the "@extra:Template" annotation.
+ * The ViewResponseListener class handles the kernel.view event and creates a {@see Response} for a {@see View} provided by the controller result.
  *
  * @author Lukas Kahwe Smith <smith@pooteeweet.org>
+ *
+ * @internal
  */
-class ViewResponseListener extends TemplateListener
+class ViewResponseListener implements EventSubscriberInterface
 {
     /**
-     * @var Symfony\Component\DependencyInjection\ContainerInterface
+     * @var ViewHandlerInterface
      */
-    protected $container;
+    private $viewHandler;
+
+    private $forceView;
 
     /**
-     * Constructor.
-     *
-     * @param ContainerInterface $container The service container instance
+     * @var Reader|null
      */
-    public function __construct(ContainerInterface $container)
+    private $annotationReader;
+
+    public function __construct(ViewHandlerInterface $viewHandler, bool $forceView, ?Reader $annotationReader = null)
     {
-        $this->container = $container;
+        $this->viewHandler = $viewHandler;
+        $this->forceView = $forceView;
+        $this->annotationReader = $annotationReader;
     }
 
     /**
-     * Guesses the template name to render and its variables and adds them to
-     * the request object.
-     *
-     * @param FilterControllerEvent $event A FilterControllerEvent instance
+     * Extracts configuration for a {@see ViewAnnotation} from the controller if present.
      */
-    public function onKernelController(FilterControllerEvent $event)
+    public function onKernelController(ControllerEvent $event)
     {
         $request = $event->getRequest();
 
-        if ($configuration = $request->attributes->get('_view')) {
-            $request->attributes->set('_template', $configuration);
+        if (!$request->attributes->get(FOSRestBundle::ZONE_ATTRIBUTE, true)) {
+            return;
         }
 
-        parent::onKernelController($event);
+        $controller = $event->getController();
+
+        if (!\is_array($controller) && method_exists($controller, '__invoke')) {
+            $controller = [$controller, '__invoke'];
+        }
+
+        if (!\is_array($controller)) {
+            return;
+        }
+
+        $className = $this->getRealClass(\get_class($controller[0]));
+        $object = new \ReflectionClass($className);
+        $method = $object->getMethod($controller[1]);
+
+        /** @var ViewAnnotation|null $classConfiguration */
+        $classConfiguration = null;
+
+        /** @var ViewAnnotation|null $methodConfiguration */
+        $methodConfiguration = null;
+
+        if (null !== $this->annotationReader) {
+            $classConfiguration = $this->getViewConfiguration($this->annotationReader->getClassAnnotations($object));
+            $methodConfiguration = $this->getViewConfiguration($this->annotationReader->getMethodAnnotations($method));
+        }
+
+        if (80000 <= \PHP_VERSION_ID) {
+            if (null === $classConfiguration) {
+                $classAttributes = array_map(
+                    function (\ReflectionAttribute $attribute) {
+                        return $attribute->newInstance();
+                    },
+                    $object->getAttributes(ViewAnnotation::class, \ReflectionAttribute::IS_INSTANCEOF)
+                );
+
+                $classConfiguration = $this->getViewConfiguration($classAttributes);
+            }
+
+            if (null === $methodConfiguration) {
+                $methodAttributes = array_map(
+                    function (\ReflectionAttribute $attribute) {
+                        return $attribute->newInstance();
+                    },
+                    $method->getAttributes(ViewAnnotation::class, \ReflectionAttribute::IS_INSTANCEOF)
+                );
+
+                $methodConfiguration = $this->getViewConfiguration($methodAttributes);
+            }
+        }
+
+        // An annotation/attribute on the method takes precedence over the class level
+        if (null !== $methodConfiguration) {
+            $request->attributes->set(FOSRestBundle::VIEW_ATTRIBUTE, $methodConfiguration);
+        } elseif (null !== $classConfiguration) {
+            $request->attributes->set(FOSRestBundle::VIEW_ATTRIBUTE, $classConfiguration);
+        }
     }
 
-    /**
-     * Renders the parameters and template and initializes a new response object with the
-     * rendered content.
-     *
-     * @param GetResponseForControllerResultEvent $event A GetResponseForControllerResultEvent instance
-     */
-    public function onKernelView(GetResponseForControllerResultEvent $event)
+    public function onKernelView(ViewEvent $event): void
     {
         $request = $event->getRequest();
-        $configuration = $request->attributes->get('_view');
+
+        if (!$request->attributes->get(FOSRestBundle::ZONE_ATTRIBUTE, true)) {
+            return;
+        }
+
+        /** @var ViewAnnotation|null $configuration */
+        $configuration = $request->attributes->get(FOSRestBundle::VIEW_ATTRIBUTE);
 
         $view = $event->getControllerResult();
-        if (!$view instanceOf View) {
-            if (!$configuration && !$this->container->getParameter('fos_rest.view_response_listener.force_view')) {
-                return parent::onKernelView($event);
+        if (!$view instanceof View) {
+            if (!$configuration instanceof ViewAnnotation && !$this->forceView) {
+                return;
             }
 
             $view = new View($view);
         }
 
-        if ($configuration) {
-            if ($configuration->getTemplateVar()) {
-                $view->setTemplateVar($configuration->getTemplateVar());
-            }
-            if ($configuration->getStatusCode() && (null === $view->getStatusCode() || Codes::HTTP_OK === $view->getStatusCode())) {
+        if ($configuration instanceof ViewAnnotation) {
+            if (null !== $configuration->getStatusCode() && (null === $view->getStatusCode() || Response::HTTP_OK === $view->getStatusCode())) {
                 $view->setStatusCode($configuration->getStatusCode());
             }
+
+            $context = $view->getContext();
             if ($configuration->getSerializerGroups()) {
-                $context = $view->getSerializationContext() ?: new SerializationContext();
-                $context->setGroups($configuration->getSerializerGroups());
-                $view->setSerializationContext($context);
+                if (null === $context->getGroups()) {
+                    $context->setGroups($configuration->getSerializerGroups());
+                } else {
+                    $context->setGroups(array_merge($context->getGroups(), $configuration->getSerializerGroups()));
+                }
+            }
+            if (true === $configuration->getSerializerEnableMaxDepthChecks()) {
+                $context->enableMaxDepth();
+            } elseif (false === $configuration->getSerializerEnableMaxDepthChecks()) {
+                $context->disableMaxDepth();
             }
         }
 
@@ -101,36 +163,49 @@ class ViewResponseListener extends TemplateListener
             $view->setFormat($request->getRequestFormat());
         }
 
-        $vars = $request->attributes->get('_template_vars');
-        if (!$vars) {
-            $vars = $request->attributes->get('_template_default_vars');
-        }
+        $event->setResponse($this->viewHandler->handle($view, $request));
+    }
 
-        $viewHandler = $this->container->get('fos_rest.view_handler');
+    public static function getSubscribedEvents(): array
+    {
+        return [
+            KernelEvents::CONTROLLER => 'onKernelController',
+            KernelEvents::VIEW => ['onKernelView', 30],
+        ];
+    }
 
-        if ($viewHandler->isFormatTemplating($view->getFormat())) {
-            if (!empty($vars)) {
-                $parameters = (array) $viewHandler->prepareTemplateParameters($view);
-                foreach ($vars as $var) {
-                    if (!array_key_exists($var, $parameters)) {
-                        $parameters[$var] = $request->attributes->get($var);
-                    }
-                }
-                $view->setData($parameters);
+    /**
+     * @param object[] $annotations
+     */
+    private function getViewConfiguration(array $annotations): ?ViewAnnotation
+    {
+        $viewAnnotation = null;
+
+        foreach ($annotations as $annotation) {
+            if (!$annotation instanceof ViewAnnotation) {
+                continue;
             }
 
-            $template = $request->attributes->get('_template');
-            if ($template) {
-                if ($template instanceof TemplateReference) {
-                    $template->set('format', null);
-                }
-
-                $view->setTemplate($template);
+            if (null === $viewAnnotation) {
+                $viewAnnotation = $annotation;
+            } else {
+                throw new \LogicException('Multiple "view" annotations are not allowed.');
             }
         }
 
-        $response = $viewHandler->handle($view, $request);
+        return $viewAnnotation;
+    }
 
-        $event->setResponse($response);
+    private function getRealClass(string $class): string
+    {
+        if (class_exists(Proxy::class)) {
+            if (false === $pos = strrpos($class, '\\'.Proxy::MARKER.'\\')) {
+                return $class;
+            }
+
+            return substr($class, $pos + Proxy::MARKER_LENGTH + 2);
+        }
+
+        return $class;
     }
 }

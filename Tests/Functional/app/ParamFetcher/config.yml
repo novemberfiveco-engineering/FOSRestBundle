@@ -1,0 +1,18 @@
+imports:
+    - { resource: ../config/default.yml }
+    - { resource: ../config/sensio_framework_extra.php }
+
+parameters:
+    bar: bar
+    foo: foo
+    invalid2: invalid2
+
+framework:
+    serializer:
+        enabled: true
+
+fos_rest:
+    exception:
+        messages:
+            Symfony\Component\HttpKernel\Exception\BadRequestHttpException: true
+    param_fetcher_listener: true
