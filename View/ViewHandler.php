@@ -197,7 +197,6 @@ final class ViewHandler implements ConfigurableViewHandlerInterface
 
             $response->headers->set('Content-Type', $mimeType);
         }
-        $response->headers->set('Content-Length', strlen($content));
 
         return $response;
     }

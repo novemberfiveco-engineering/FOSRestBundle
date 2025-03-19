@@ -20,7 +20,7 @@ use Symfony\Component\HttpFoundation\Response;
  * @author Johannes M. Schmitt <schmittjoh@gmail.com>
  * @author Lukas K. Smith <smith@pooteeweet.org>
  */
-final class View
+class View
 {
     private $data;
     private $statusCode;
