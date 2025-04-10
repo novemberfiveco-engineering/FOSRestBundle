@@ -200,4 +200,16 @@ class View
 
         return $this->context;
     }
+
+    public function setTemplate($template)
+    {
+        $this->template = $template;
+
+        return $this;
+    }
+
+    public function getTemplate()
+    {
+        return $this->template;
+    }
 }
